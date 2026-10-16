@@ -4,7 +4,7 @@
 
 - name: Fail if not running as root
   ansible.builtin.assert:
-    that: ansible_user_uid == 0
+    that: ansible_facts['user_uid'] == 0
     fail_msg: "This role needs to be executed as root."
 
 - name: Assert if SUSE connect is available
@@ -23,8 +23,24 @@
 
 - name: Fail if the os is not SUSE family
   ansible.builtin.assert:
-    that: ansible_os_family == "Suse" or ansible_distribution == "SL-Micro"
+    that: ansible_facts['os_family'] == "Suse" or ansible_facts['distribution'] == "SL-Micro"
     fail_msg: "This role is only supported on SUSE family operating systems."
+
+# The distribution name is not always the product name (SLES Immutable reports SL-Micro)
+- name: Read the installed base product
+  ansible.builtin.slurp:
+    src: /etc/products.d/baseproduct
+  register: __suseconnect_baseproduct
+
+- name: Set the installed base product name
+  ansible.builtin.set_fact:
+    __suseconnect_base_product_name: >-
+      {{ __suseconnect_baseproduct.content | b64decode | regex_findall('<name>([^<]+)</name>') | first | default('') }}
+
+- name: Fail if the base product could not be identified
+  ansible.builtin.assert:
+    that: __suseconnect_base_product_name | length > 0
+    fail_msg: "No product name found in /etc/products.d/baseproduct; is a SUSE base product installed?"
 
 # On-prem Hyper-V has the identical product_name/chassis_vendor but a RANDOM asset tag,
 # so keying on the tag avoids misidentifying on-prem Hyper-V as Azure
@@ -33,12 +49,12 @@
   ansible.builtin.set_fact:
     __suseconnect_is_cloud_instance: >-
       {{
-        ("amazon" in ansible_system_vendor | lower) or
-        ("amazon" in ansible_product_name | lower) or
-        ("amazon" in ansible_product_version | lower) or
-        (ansible_product_name == 'Google Compute Engine') or
-        (ansible_chassis_asset_tag == 'ibmcloud') or
-      (ansible_chassis_asset_tag == '7783-7084-3265-9085-8269-3286-77')
+        ("amazon" in ansible_facts['system_vendor'] | lower) or
+        ("amazon" in ansible_facts['product_name'] | lower) or
+        ("amazon" in ansible_facts['product_version'] | lower) or
+        (ansible_facts['product_name'] == 'Google Compute Engine') or
+        (ansible_facts['chassis_asset_tag'] == 'ibmcloud') or
+      (ansible_facts['chassis_asset_tag'] == '7783-7084-3265-9085-8269-3286-77')
       }}
 
 - name: Prevent registration against scc for payg instances
